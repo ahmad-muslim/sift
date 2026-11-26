@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nmaprun scanner="nmap" args="nmap -sV --script vulners,vuln -oX nmap_vuln.xml 192.0.2.10 app.example" version="7.95">
+  <host>
+    <status state="up" reason="syn-ack"/>
+    <address addr="192.0.2.10" addrtype="ipv4"/>
+    <ports>
+      <port protocol="tcp" portid="443">
+        <state state="open" reason="syn-ack"/>
+        <service name="https" product="Apache httpd" version="2.4.49"/>
+        <script id="vulners" output="cpe:/a:apache:http_server:2.4.49: CVE-2021-44228 10.0, CVE-2021-41773 7.5">
+          <table key="cpe:/a:apache:http_server:2.4.49">
+            <table>
+              <elem key="id">CVE-2021-44228</elem>
+              <elem key="cvss">10.0</elem>
+              <elem key="type">cve</elem>
+              <elem key="is_exploit">true</elem>
+            </table>
+            <table>
+              <elem key="id">CVE-2021-41773</elem>
+              <elem key="cvss">7.5</elem>
+              <elem key="type">cve</elem>
+              <elem key="is_exploit">true</elem>
+            </table>
+          </table>
+        </script>
+        <script id="ssl-heartbleed" output="VULNERABLE: The Heartbleed Bug CVSSv3: 7.5">
+          <table key="CVE-2014-0160">
+            <elem key="title">The Heartbleed Bug is a serious vulnerability in OpenSSL</elem>
+            <elem key="state">VULNERABLE</elem>
+            <table key="ids">
+              <elem>CVE:CVE-2014-0160</elem>
+            </table>
+            <table key="description">
+              <elem>OpenSSL TLS heartbeat read overrun allows memory disclosure.</elem>
+            </table>
+            <table key="refs">
+              <elem>https://heartbleed.com/</elem>
+              <elem>https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-0160</elem>
+            </table>
+          </table>
+        </script>
+        <script id="http-shellshock" output="NOT VULNERABLE">
+          <table key="CVE-2014-6271">
+            <elem key="title">HTTP Shellshock</elem>
+            <elem key="state">NOT VULNERABLE</elem>
+          </table>
+        </script>
+        <script id="ssl-weak-cipher" output="VULNERABLE: Deprecated CBC cipher suite accepted.">
+          <table key="ssl-weak-cipher">
+            <elem key="title">Weak TLS Cipher Suite</elem>
+            <elem key="state">LIKELY VULNERABLE</elem>
+            <table key="description">
+              <elem>Server negotiates legacy TLS 1.0 CBC ciphers.</elem>
+            </table>
+          </table>
+        </script>
+        <script id="http-title" output="Welcome to Portal"/>
+      </port>
+    </ports>
+  </host>
+  <host>
+    <status state="up" reason="syn-ack"/>
+    <address addr="192.0.2.20" addrtype="ipv4"/>
+    <hostnames>
+      <hostname name="app.example" type="user"/>
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="22">
+        <state state="open" reason="syn-ack"/>
+        <service name="ssh" product="OpenSSH" version="9.3p1"/>
+        <script id="ssh-vuln-regresshion" output="VULNERABLE: OpenSSH signal handler race condition (CVE-2024-6387) CVSSv3: 8.1"/>
+      </port>
+    </ports>
+  </host>
+</nmaprun>
