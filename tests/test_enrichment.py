@@ -105,7 +105,9 @@ class TestThreatIntelCache:
         assert resolve_cache_dir() == env_dir
 
         monkeypatch.delenv("SIFT_CACHE_DIR", raising=False)
-        assert resolve_cache_dir().name.lower() == "sift"
+        default_dir = resolve_cache_dir()
+        # Linux/macOS end with ".../sift"; Windows ends with "...\\sift\\Cache"
+        assert "sift" in {part.lower() for part in default_dir.parts}
 
     def test_kev_replace_lookup_and_ttl(self, tmp_path: Path) -> None:
         t0 = 1_700_000_000.0
