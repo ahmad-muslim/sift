@@ -16,7 +16,7 @@
 | **P3** | Medium | **CVSS 4.0–7.9** |
 | **P4** | Low/Info | Everything else |
 
-- **Flexible Outputs & CI Gate:** Color-coded `Rich` terminal table by default, RFC 4180 `--output-csv` (with spreadsheet formula-injection sanitization), GitHub/client-ready `--output-md`, and `--fail-on` exit code gating for CI/CD pipelines.
+- **Flexible Outputs & CI Gate:** Color-coded `Rich` terminal table by default, RFC 4180 `--output-csv` (with spreadsheet formula-injection sanitization), GitHub/client-ready `--output-md`, self-contained offline interactive `--output-html` dashboard, and `--fail-on` exit code gating for CI/CD pipelines.
 
 ## Installation
 
@@ -44,12 +44,13 @@ Ingest multiple scan outputs (formats are auto-detected):
 sift scan nmap_vuln.xml nuclei_results.jsonl trivy_scan.json
 ```
 
-Export prioritized reports to Markdown and CSV:
+Export prioritized reports to Markdown, CSV, and interactive HTML:
 
 ```bash
 sift scan nmap_vuln.xml nuclei_results.jsonl trivy_scan.json \
   --output-md report.md \
-  --output-csv findings.csv
+  --output-csv findings.csv \
+  --output-html dashboard.html
 ```
 
 Run fully offline using cached threat intelligence, or fail a CI build on P1 findings:

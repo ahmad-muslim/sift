@@ -15,7 +15,7 @@ from sift.core import PipelineResult, run_pipeline
 from sift.enrichment import DEFAULT_TIMEOUT_SECONDS, ThreatIntelCache
 from sift.models import PriorityTier
 from sift.parsers import ParseError, create_default_registry
-from sift.reporters import export_csv, export_markdown, render_terminal_report
+from sift.reporters import export_csv, export_html, export_markdown, render_terminal_report
 
 app = typer.Typer(
     name="sift",
@@ -87,6 +87,14 @@ def scan(
             help="Export a GitHub/client-ready Markdown report.",
         ),
     ] = None,
+    output_html: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-html",
+            dir_okay=False,
+            help="Export a self-contained interactive HTML dashboard report.",
+        ),
+    ] = None,
     offline: Annotated[
         bool,
         typer.Option(
@@ -144,7 +152,10 @@ def scan(
         bool,
         typer.Option(
             "--no-table",
-            help="Suppress terminal table rendering (useful when exporting only to CSV/Markdown).",
+            help=(
+                "Suppress terminal table rendering "
+                "(useful when exporting only to CSV/Markdown/HTML)."
+            ),
         ),
     ] = False,
 ) -> None:
@@ -199,6 +210,20 @@ def scan(
             warnings=result.enrichment.warnings,
         )
         err_console.print(f"[green]Markdown report written:[/green] {written_md}")
+
+    if output_html is not None:
+        try:
+            written_html = export_html(
+                result.findings,
+                output_html,
+                raw_count=result.raw_count,
+                duplicates_merged=result.duplicates_merged,
+                warnings=result.enrichment.warnings,
+            )
+        except (ValueError, OSError) as exc:
+            err_console.print(f"[bold red]HTML Export Error:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+        err_console.print(f"[green]HTML report written:[/green] {written_html}")
 
     if fail_on is not None and any(
         finding.priority.rank <= fail_on.rank for finding in result.findings

@@ -34,6 +34,7 @@ def test_cli_parsers_command() -> None:
 def test_cli_scan_offline_exports_and_fail_on(tmp_path: Path) -> None:
     csv_out = tmp_path / "out.csv"
     md_out = tmp_path / "out.md"
+    html_out = tmp_path / "out.html"
 
     result = runner.invoke(
         app,
@@ -49,6 +50,8 @@ def test_cli_scan_offline_exports_and_fail_on(tmp_path: Path) -> None:
             str(csv_out),
             "--output-md",
             str(md_out),
+            "--output-html",
+            str(html_out),
             "--fail-on",
             "P2",
         ],
@@ -57,7 +60,31 @@ def test_cli_scan_offline_exports_and_fail_on(tmp_path: Path) -> None:
     assert result.exit_code == 2
     assert csv_out.exists()
     assert md_out.exists()
+    assert html_out.exists()
     assert "CVE-2021-44228" in md_out.read_text(encoding="utf-8")
+    html_content = html_out.read_text(encoding="utf-8")
+    assert "<!DOCTYPE html>" in html_content
+    assert "CVE-2021-44228" in html_content
+    assert 'id="sift-findings-data"' in html_content
+
+
+def test_cli_scan_rejects_directory_as_output_html(tmp_path: Path) -> None:
+    out_dir = tmp_path / "dir_target"
+    out_dir.mkdir()
+    result = runner.invoke(
+        app,
+        [
+            "scan",
+            str(FIXTURES_DIR / "trivy_scan.json"),
+            "--offline",
+            "--no-table",
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--output-html",
+            str(out_dir),
+        ],
+    )
+    assert result.exit_code != 0
 
 
 def test_cli_cache_stats_and_clear(tmp_path: Path) -> None:

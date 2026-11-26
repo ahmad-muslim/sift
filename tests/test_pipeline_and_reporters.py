@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -23,8 +25,10 @@ from sift.models import NormalizedFinding, PriorityTier, RawFinding, ThreatIntel
 from sift.reporters import (
     CSV_COLUMNS,
     export_csv,
+    export_html,
     export_markdown,
     format_csv,
+    format_html,
     format_markdown,
     sanitize_csv_cell,
 )
@@ -313,3 +317,180 @@ class TestReporters:
         out_path = export_markdown(findings, tmp_path / "reports" / "out.md")
         assert out_path.exists()
         assert "## Prioritized Findings" in out_path.read_text(encoding="utf-8")
+
+    def test_html_export_renders_offline_dashboard_kpis_and_json_payload(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        findings = self._sample_findings()
+        rendered = format_html(
+            findings,
+            raw_count=3,
+            duplicates_merged=1,
+            warnings=["Offline mode: using cached KEV catalog."],
+            generated_at=datetime(2026, 11, 25, 12, 0, 0, tzinfo=UTC),
+        )
+
+        # Standalone document, strict CSP, and zero external CDN/font/stylesheet links
+        assert rendered.startswith("<!DOCTYPE html>")
+        assert "default-src 'none'" in rendered
+        assert "base-uri 'none'" in rendered
+        assert "form-action 'none'" in rendered
+        assert "new URL(url)" in rendered
+        assert "<link " not in rendered
+        assert "fonts.googleapis.com" not in rendered
+        assert "cdn.jsdelivr.net" not in rendered
+        assert "unpkg.com" not in rendered
+
+        # KPI cards, tier filters, sortable headers, dark/light toggle, and print CSS
+        for marker in (
+            "Total Findings",
+            "P1 (Urgent)",
+            "P2 (High)",
+            "P3 (Medium)",
+            "P4 (Low/Info)",
+            "CISA KEV",
+            'data-filter="ALL"',
+            'data-filter="P1"',
+            'data-filter="P2"',
+            'data-filter="P3"',
+            'data-filter="P4"',
+            'data-filter="KEV"',
+            "KEV Only",
+            'data-sort-key="priority"',
+            'data-sort-key="cvss"',
+            'data-sort-key="epss"',
+            'id="search-input"',
+            'id="theme-toggle"',
+            "@media print",
+            "2026-11-25 12:00:00 UTC",
+            "Duplicates Merged: 1",
+            "Offline mode: using cached KEV catalog.",
+        ):
+            assert marker in rendered
+
+        # Findings embedded safely inside <script type="application/json">
+        match = re.search(
+            r'<script id="sift-findings-data" type="application/json">(.*?)</script>',
+            rendered,
+            flags=re.DOTALL,
+        )
+        assert match is not None
+        embedded = json.loads(match.group(1))
+        assert len(embedded) == 2
+        assert embedded[0]["cve_id"] == "CVE-2021-44228"
+        assert embedded[0]["priority"] == "P1"
+        assert embedded[0]["in_kev"] is True
+        assert embedded[0]["scanner_sources"] == ["nmap", "nuclei"]
+        assert embedded[1]["rule_id"] == "DS002"
+        assert embedded[1]["scanner_sources"] == ["trivy"]
+
+        # Verify file export creates parent directories and matches rendered HTML
+        out_path = export_html(
+            findings,
+            tmp_path / "reports" / "dashboard.html",
+            raw_count=3,
+            duplicates_merged=1,
+            warnings=["Offline mode: using cached KEV catalog."],
+            generated_at=datetime(2026, 11, 25, 12, 0, 0, tzinfo=UTC),
+        )
+        assert out_path.exists()
+        assert out_path.read_text(encoding="utf-8") == rendered
+
+    def test_html_export_prevents_xss_in_untrusted_scanner_fields(self) -> None:
+        xss_finding = NormalizedFinding(
+            target='192.0.2.99"><img src=x onerror=alert(2)>',
+            port=8080,
+            service="<b>http-proxy</b>",
+            cve_id=None,
+            rule_id="</script><script>alert(3)</script>",
+            cvss_score=9.1,
+            scanner_sources=["nuclei"],
+            description="Untrusted payload: <script>alert(1)</script> & </script>",
+            references=[
+                "javascript:alert(4)",
+                "https://",
+                "https://example.com/advisory?a=1&b=2",
+            ],
+            priority=PriorityTier.P2,
+            priority_reason="<svg onload=alert(5)>",
+        )
+        rendered = format_html(
+            [xss_finding],
+            warnings=["<script>alert(6)</script>"],
+        )
+
+        # Raw executable payloads must never appear anywhere in the rendered HTML
+        assert "<script>alert(1)</script>" not in rendered
+        assert "<img src=x onerror=alert(2)>" not in rendered
+        assert "<b>http-proxy</b>" not in rendered
+        assert "</script><script>alert(3)</script>" not in rendered
+        assert "<svg onload=alert(5)>" not in rendered
+        assert "<script>alert(6)</script>" not in rendered
+        assert 'href="javascript:' not in rendered
+        assert 'href="https://"' not in rendered
+
+        # Static HTML escapes payloads cleanly
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+        assert "&lt;script&gt;alert(6)&lt;/script&gt;" in rendered
+        assert 'href="https://example.com/advisory?a=1&amp;b=2"' in rendered
+
+        # JSON script block escapes '<' and '>' while round-tripping exact original values
+        match = re.search(
+            r'<script id="sift-findings-data" type="application/json">(.*?)</script>',
+            rendered,
+            flags=re.DOTALL,
+        )
+        assert match is not None
+        raw_json_block = match.group(1)
+        assert "<" not in raw_json_block
+        assert ">" not in raw_json_block
+        assert "\\u003cscript\\u003ealert(1)\\u003c/script\\u003e" in raw_json_block
+
+        parsed = json.loads(raw_json_block)
+        assert parsed[0]["description"] == xss_finding.description
+        assert parsed[0]["rule_id"] == xss_finding.rule_id
+        assert parsed[0]["target"] == xss_finding.target
+
+    def test_html_export_empty_findings(self, tmp_path: Path) -> None:
+        rendered = format_html([])
+        assert "No findings matched the scan criteria." in rendered
+        assert "Showing 0 of 0 findings" in rendered
+
+        out_path = export_html([], tmp_path / "empty.html")
+        assert out_path.exists()
+        assert out_path.read_text(encoding="utf-8") == rendered
+
+    def test_html_export_rejects_directory_target(self, tmp_path: Path) -> None:
+        existing_dir = tmp_path / "existing_dir"
+        existing_dir.mkdir()
+        with pytest.raises(ValueError, match="directory"):
+            export_html([], existing_dir)
+
+    def test_html_export_rejects_symlink_targets_and_parents(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        symlink_file = tmp_path / "link.html"
+        symlink_parent = tmp_path / "link_dir"
+        fake_symlinks = {symlink_file, symlink_parent}
+
+        original_is_symlink = Path.is_symlink
+
+        def _fake_is_symlink(self: Path) -> bool:
+            if self in fake_symlinks:
+                return True
+            return original_is_symlink(self)
+
+        monkeypatch.setattr(Path, "is_symlink", _fake_is_symlink)
+
+        with pytest.raises(ValueError, match="symlink"):
+            export_html([], symlink_file)
+
+        with pytest.raises(ValueError, match="symlink"):
+            export_html([], symlink_parent / "report.html")
+
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(ValueError, match="symlink"):
+            export_html([], Path("link_dir") / "nested" / "report.html")
